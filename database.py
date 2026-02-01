@@ -81,6 +81,33 @@ class Document:
         )
 
 
+@dataclass
+class Feedback:
+    """フィードバックレコード"""
+
+    id: Optional[int]
+    category: str           # ui, feature, bug, performance, other
+    priority: str           # low, medium, high
+    content: str            # フィードバック内容
+    status: str             # pending, in_progress, done, rejected
+    user_name: str          # 投稿者名（任意）
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, row: tuple) -> "Feedback":
+        return cls(
+            id=row[0],
+            category=row[1],
+            priority=row[2],
+            content=row[3],
+            status=row[4],
+            user_name=row[5],
+            created_at=datetime.fromisoformat(row[6]) if row[6] else None,
+            updated_at=datetime.fromisoformat(row[7]) if row[7] else None,
+        )
+
+
 class Database:
     """SQLiteデータベース操作クラス"""
 
@@ -148,6 +175,26 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_customers_contractor
                 ON customers(contractor_name);
+
+                CREATE TABLE IF NOT EXISTS feedbacks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT NOT NULL,
+                    priority TEXT DEFAULT 'medium',
+                    content TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    user_name TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_feedbacks_status
+                ON feedbacks(status);
+
+                CREATE INDEX IF NOT EXISTS idx_feedbacks_category
+                ON feedbacks(category);
+
+                CREATE INDEX IF NOT EXISTS idx_feedbacks_priority
+                ON feedbacks(priority);
             """
             )
 
@@ -313,6 +360,7 @@ class Database:
             conn.execute("DELETE FROM documents")
             conn.execute("DELETE FROM clusters")
             conn.execute("DELETE FROM customers")
+            conn.execute("DELETE FROM feedbacks")
 
     # ==================== 顧客情報 ====================
 
@@ -467,3 +515,127 @@ class Database:
         """顧客を削除"""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+
+    # ==================== フィードバック ====================
+
+    def insert_feedback(
+        self,
+        category: str,
+        content: str,
+        priority: str = "medium",
+        user_name: str = "",
+    ) -> int:
+        """
+        フィードバックを挿入
+
+        Args:
+            category: カテゴリ（ui, feature, bug, performance, other）
+            content: フィードバック内容
+            priority: 優先度（low, medium, high）
+            user_name: 投稿者名（任意）
+
+        Returns:
+            挿入されたレコードのID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO feedbacks (category, priority, content, user_name)
+                VALUES (?, ?, ?, ?)
+                """,
+                (category, priority, content, user_name),
+            )
+            return cursor.lastrowid
+
+    def get_feedback(self, feedback_id: int) -> Optional[Feedback]:
+        """IDでフィードバックを取得"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM feedbacks WHERE id = ?", (feedback_id,)
+            ).fetchone()
+            return Feedback.from_row(row) if row else None
+
+    def get_all_feedbacks(self, limit: int = 100) -> List[Feedback]:
+        """全フィードバックを取得（新しい順）"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM feedbacks ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [Feedback.from_row(row) for row in rows]
+
+    def get_feedbacks_by_status(self, status: str) -> List[Feedback]:
+        """ステータスでフィードバックを取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM feedbacks WHERE status = ? ORDER BY priority DESC, created_at DESC",
+                (status,),
+            ).fetchall()
+            return [Feedback.from_row(row) for row in rows]
+
+    def get_pending_feedbacks(self) -> List[Feedback]:
+        """未対応のフィードバックを取得"""
+        return self.get_feedbacks_by_status("pending")
+
+    def get_feedbacks_by_category(self, category: str) -> List[Feedback]:
+        """カテゴリでフィードバックを取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM feedbacks WHERE category = ? ORDER BY created_at DESC",
+                (category,),
+            ).fetchall()
+            return [Feedback.from_row(row) for row in rows]
+
+    def update_feedback_status(self, feedback_id: int, status: str):
+        """フィードバックのステータスを更新"""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE feedbacks
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (status, feedback_id),
+            )
+
+    def get_feedback_stats(self) -> dict:
+        """フィードバック統計を取得"""
+        with self._get_connection() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM feedbacks").fetchone()[0]
+
+            by_status = conn.execute(
+                """
+                SELECT status, COUNT(*) as count
+                FROM feedbacks
+                GROUP BY status
+                """
+            ).fetchall()
+
+            by_category = conn.execute(
+                """
+                SELECT category, COUNT(*) as count
+                FROM feedbacks
+                GROUP BY category
+                ORDER BY count DESC
+                """
+            ).fetchall()
+
+            by_priority = conn.execute(
+                """
+                SELECT priority, COUNT(*) as count
+                FROM feedbacks
+                GROUP BY priority
+                """
+            ).fetchall()
+
+            return {
+                "total": total,
+                "by_status": {row[0]: row[1] for row in by_status},
+                "by_category": {row[0]: row[1] for row in by_category},
+                "by_priority": {row[0]: row[1] for row in by_priority},
+            }
+
+    def delete_feedback(self, feedback_id: int):
+        """フィードバックを削除"""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM feedbacks WHERE id = ?", (feedback_id,))

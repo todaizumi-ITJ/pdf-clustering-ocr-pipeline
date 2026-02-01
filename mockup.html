@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF フィールド抽出システム</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ヘッダー */
+        .header {
+            background: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            height: 50px;
+        }
+
+        .header h1 {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .header-file {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 20px;
+            background: rgba(255,255,255,0.15);
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+
+        .header-file span {
+            font-size: 13px;
+        }
+
+        .header-stats {
+            margin-left: auto;
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        /* メインコンテナ - 左右分割 */
+        .container {
+            display: flex;
+            height: calc(100vh - 50px);
+        }
+
+        /* 左側：PDF/OCR表示 */
+        .left-panel {
+            width: 66%;
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .panel-tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .panel-tab {
+            padding: 6px 14px;
+            background: transparent;
+            border: none;
+            color: rgba(255,255,255,0.6);
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .panel-tab.active {
+            background: rgba(255,255,255,0.15);
+            color: white;
+        }
+
+        .btn-open-pdf {
+            margin-left: auto;
+            padding: 6px 12px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .ocr-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            color: #e0e0e0;
+            font-size: 14px;
+            line-height: 1.8;
+            font-family: 'Courier New', monospace;
+        }
+
+        .ocr-content .highlight {
+            background: rgba(255, 213, 79, 0.3);
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+
+        /* 右側：入力フォーム */
+        .right-panel {
+            width: 34%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+
+        /* ドロップゾーン（コンパクト版） */
+        .dropzone {
+            border: 2px dashed #1a73e8;
+            border-radius: 6px;
+            padding: 8px 12px;
+            text-align: center;
+            background: #f8faff;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .dropzone:hover {
+            background: #e8f0fe;
+            border-color: #1557b0;
+        }
+
+        .dropzone-icon {
+            font-size: 18px;
+        }
+
+        .dropzone p {
+            color: #666;
+            font-size: 11px;
+            margin: 0;
+        }
+
+        .dropzone-hint {
+            font-size: 10px;
+            color: #999;
+        }
+
+        /* ファイルキュー */
+        .file-queue {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 10px;
+        }
+
+        .queue-item {
+            padding: 2px 8px;
+            background: #e8eaed;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+
+        .queue-item.active {
+            background: #1a73e8;
+            color: white;
+        }
+
+        .queue-item.done {
+            background: #34a853;
+            color: white;
+        }
+
+        .queue-more {
+            color: #666;
+        }
+
+        /* フォームエリア */
+        .form-area {
+            flex: 1;
+            padding: 10px 12px;
+            overflow-y: auto;
+            min-height: 200px;
+        }
+
+        /* コンパクトフォーム */
+        .form-section {
+            margin-bottom: 8px;
+        }
+
+        .form-section-title {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            padding-bottom: 2px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .form-field {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .form-field.w50 {
+            flex: 0 0 50%;
+        }
+
+        .form-field.w30 {
+            flex: 0 0 30%;
+        }
+
+        .form-field label {
+            font-size: 10px;
+            color: #666;
+            white-space: nowrap;
+            min-width: 50px;
+        }
+
+        .form-field input {
+            flex: 1;
+            padding: 4px 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            min-width: 0;
+        }
+
+        .form-field input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+
+        .form-field input.required {
+            border-left: 3px solid #1a73e8;
+        }
+
+        /* コードバッジ */
+        .code-field {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .code-badge {
+            background: #1a73e8;
+            color: white;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .code-name {
+            font-size: 11px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* メモ */
+        .memo-field textarea {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 11px;
+            resize: none;
+            height: 36px;
+        }
+
+        /* アクションバー */
+        .action-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-success {
+            background: #34a853;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e8eaed;
+            color: #333;
+        }
+
+        .btn-skip {
+            margin-left: auto;
+            background: transparent;
+            color: #666;
+            padding: 6px 8px;
+        }
+
+        .progress-info {
+            font-size: 12px;
+            color: #666;
+        }
+
+        /* ショートカット */
+        .shortcuts {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 10px;
+            display: flex;
+            gap: 12px;
+        }
+
+        .shortcuts span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .shortcuts kbd {
+            background: rgba(255,255,255,0.2);
+            padding: 2px 5px;
+            border-radius: 2px;
+            font-family: monospace;
+        }
+
+        /* 信頼度インジケーター */
+        .confidence {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+        }
+
+        .confidence-bar {
+            width: 60px;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .confidence-bar .fill {
+            height: 100%;
+            background: #34a853;
+        }
+
+        /* ヘルプモーダル */
+        .help-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .help-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .help-modal.show {
+            display: flex;
+        }
+
+        .help-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .help-content h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #1a73e8;
+        }
+
+        .help-content h3 {
+            font-size: 14px;
+            margin: 16px 0 8px 0;
+            color: #333;
+        }
+
+        .help-content ol, .help-content ul {
+            margin-left: 20px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        .help-content .step {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 3px solid #1a73e8;
+        }
+
+        .help-content .step-num {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #1a73e8;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+
+        .help-close {
+            float: right;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .shortcut-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .shortcut-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .shortcut-table kbd {
+            background: #e8eaed;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+
+        /* ツールチップ */
+        .tooltip-trigger {
+            position: relative;
+            cursor: help;
+        }
+
+        .tooltip-trigger::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 100;
+        }
+
+        .tooltip-trigger:hover::after {
+            opacity: 1;
+        }
+
+        /* 初回ガイド */
+        .onboarding {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            background: #1a73e8;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            max-width: 280px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 500;
+        }
+
+        .onboarding::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            right: 20px;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 8px solid #1a73e8;
+        }
+
+        .onboarding h4 {
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .onboarding p {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 12px;
+        }
+
+        .onboarding-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        /* ==================== 品質管理 ==================== */
+
+        /* 信頼度が低い項目のハイライト */
+        .form-field input.low-confidence {
+            border-color: #f9a825;
+            background: #fffde7;
+        }
+
+        .form-field input.low-confidence:focus {
+            border-color: #f57f17;
+            box-shadow: 0 0 0 2px rgba(249, 168, 37, 0.2);
+        }
+
+        .confidence-indicator {
+            position: relative;
+        }
+
+        .confidence-indicator::after {
+            content: '⚠️';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+        }
+
+        /* バリデーションエラー */
+        .form-field input.invalid {
+            border-color: #d32f2f;
+            background: #ffebee;
+        }
+
+        .validation-error {
+            font-size: 10px;
+            color: #d32f2f;
+            margin-top: 2px;
+        }
+
+        /* 二重登録警告 */
+        .duplicate-warning {
+            background: #fff3e0;
+            border: 1px solid #ff9800;
+            border-radius: 4px;
+            padding: 6px 10px;
+            margin: 4px 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+        }
+
+        .duplicate-warning-icon {
+            font-size: 18px;
+        }
+
+        .duplicate-warning-text {
+            flex: 1;
+        }
+
+        .duplicate-warning-text strong {
+            color: #e65100;
+        }
+
+        .duplicate-warning-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .duplicate-warning-actions button {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .btn-view-duplicate {
+            background: #ff9800;
+            color: white;
+            border: none;
+        }
+
+        .btn-ignore-warning {
+            background: transparent;
+            border: 1px solid #ccc;
+            color: #666;
+        }
+
+        /* 品質スコア詳細 */
+        .quality-panel {
+            background: #f5f5f5;
+            border-radius: 4px;
+            padding: 6px 10px;
+            margin: 4px 12px;
+            font-size: 10px;
+        }
+
+        .quality-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .quality-title {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .quality-toggle {
+            background: none;
+            border: none;
+            color: #1a73e8;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .quality-items {
+            display: none;
+        }
+
+        .quality-items.show {
+            display: block;
+        }
+
+        .quality-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .quality-item:last-child {
+            border-bottom: none;
+        }
+
+        .quality-item-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .quality-item-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .quality-item-status.ok {
+            background: #34a853;
+        }
+
+        .quality-item-status.warning {
+            background: #f9a825;
+        }
+
+        .quality-item-status.error {
+            background: #d32f2f;
+        }
+
+        .quality-item-value {
+            color: #888;
+        }
+
+        /* 監査ログ表示 */
+        .audit-info {
+            font-size: 9px;
+            color: #999;
+            padding: 4px 12px;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* ==================== UI改善 ==================== */
+
+        /* Undo/Redoボタン */
+        .undo-redo {
+            display: flex;
+            gap: 4px;
+            margin-left: 8px;
+        }
+
+        .undo-redo button {
+            padding: 2px 6px;
+            background: #e8eaed;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            color: #666;
+        }
+
+        .undo-redo button:hover {
+            background: #d0d0d0;
+        }
+
+        .undo-redo button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* 一括処理モード切替 */
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: #e3f2fd;
+            border-bottom: 1px solid #bbdefb;
+            font-size: 10px;
+        }
+
+        .mode-toggle label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .mode-toggle input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        .mode-toggle .mode-desc {
+            color: #1565c0;
+        }
+
+        /* 自動保存インジケーター */
+        .autosave-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            color: #666;
+        }
+
+        .autosave-indicator.saving {
+            color: #1a73e8;
+        }
+
+        .autosave-indicator.saved {
+            color: #34a853;
+        }
+
+        .autosave-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #34a853;
+        }
+
+        .autosave-indicator.saving .autosave-dot {
+            background: #1a73e8;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* フォーカス時のフィールドハイライト */
+        .form-field input:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+
+        /* 編集済みマーク */
+        .form-field input.edited {
+            border-color: #9c27b0;
+            background: #f3e5f5;
+        }
+
+        .form-field input.edited::placeholder {
+            color: #9c27b0;
+        }
+
+        /* クイックアクション */
+        .quick-actions {
+            display: flex;
+            gap: 6px;
+            padding: 4px 12px;
+            background: #fafafa;
+            border-bottom: 1px solid #eee;
+        }
+
+        .quick-action {
+            padding: 2px 8px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .quick-action:hover {
+            background: #f0f0f0;
+        }
+
+        /* お気に入りコード */
+        .favorite-codes {
+            display: flex;
+            gap: 4px;
+            margin-top: 6px;
+        }
+
+        .favorite-code {
+            padding: 2px 6px;
+            background: #e8eaed;
+            border: none;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .favorite-code:hover {
+            background: #1a73e8;
+            color: white;
+        }
+
+        /* プログレスバー（ファイルキュー下） */
+        .batch-progress {
+            height: 3px;
+            background: #e0e0e0;
+        }
+
+        .batch-progress .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #34a853, #1a73e8);
+            transition: width 0.3s;
+        }
+
+        /* フィードバックモーダル */
+        .feedback-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .feedback-modal.show {
+            display: flex;
+        }
+
+        .feedback-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .feedback-content h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #1a73e8;
+        }
+
+        .feedback-close {
+            float: right;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .feedback-form label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            margin-top: 12px;
+        }
+
+        .feedback-form select,
+        .feedback-form textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .feedback-form textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .feedback-form .btn-submit {
+            margin-top: 16px;
+            width: 100%;
+            padding: 10px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .feedback-form .btn-submit:hover {
+            background: #1557b0;
+        }
+
+        .feedback-success {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .feedback-success.show {
+            display: block;
+        }
+
+        .feedback-success-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .feedback-success h3 {
+            color: #34a853;
+            margin-bottom: 8px;
+        }
+
+        .feedback-history {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #eee;
+        }
+
+        .feedback-history h4 {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .feedback-item {
+            background: #f8f9fa;
+            padding: 8px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+
+        .feedback-item-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .feedback-item-type {
+            background: #e8eaed;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        .feedback-item-date {
+            color: #999;
+            font-size: 10px;
+        }
+
+        .feedback-item-status {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+        }
+
+        .feedback-item-status.pending {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .feedback-item-status.done {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <span>📄</span>
+        <h1>PDF フィールド抽出</h1>
+        <div class="header-file">
+            <span>📁 受任通知_佐藤花子.pdf</span>
+        </div>
+        <div class="header-stats">
+            <span>本日 <strong>12</strong>件</span>
+            <span>今月 <strong>248</strong>件</span>
+        </div>
+        <button class="help-btn" onclick="showHelp()">❓ 使い方</button>
+        <button class="help-btn" onclick="showFeedback()">💬 改善提案</button>
+    </header>
+
+    <div class="container">
+        <!-- 左側：OCR/PDF表示 -->
+        <div class="left-panel">
+            <div class="panel-header">
+                <div class="panel-tabs">
+                    <button class="panel-tab active">OCRテキスト</button>
+                    <button class="panel-tab">PDFプレビュー</button>
+                </div>
+                <button class="btn-open-pdf" onclick="alert('原本PDFを開きます')">
+                    📂 原本を開く
+                </button>
+            </div>
+            <div class="ocr-content">
+                受任通知書<br><br>
+                令和6年1月15日<br><br>
+                株式会社〇〇御中<br><br>
+                下記の者より委任を受けましたので、ご通知申し上げます。<br><br>
+
+                【契約者情報】<br>
+                氏名：<span class="highlight">佐藤 花子</span><br>
+                フリガナ：<span class="highlight">サトウ ハナコ</span><br>
+                住所：<span class="highlight">〒150-0001 東京都渋谷区神宮前1-2-3 サンプルマンション101</span><br>
+                電話番号：<span class="highlight">03-1234-5678</span><br>
+                メール：<span class="highlight">sato.hanako@example.com</span><br><br>
+
+                【契約内容】<br>
+                プロバイダ：<span class="highlight">ニフティ</span><br>
+                契約番号：NF-2024-00123<br><br>
+
+                <span class="highlight">アディーレ法律事務所</span><br>
+                弁護士 鈴木 太郎<br>
+                〒100-0001 東京都千代田区〇〇1-2-3<br>
+                TEL: 03-xxxx-xxxx
+            </div>
+        </div>
+
+        <!-- 右側：入力フォーム -->
+        <div class="right-panel">
+            <!-- ドロップゾーン（コンパクト） -->
+            <div class="dropzone">
+                <span class="dropzone-icon">📁</span>
+                <p>PDFをドロップ</p>
+                <span class="dropzone-hint">または クリック</span>
+            </div>
+
+            <!-- 一括処理モード切替 -->
+            <div class="mode-toggle">
+                <label>
+                    <input type="checkbox" id="batchMode">
+                    <span>一括処理モード</span>
+                </label>
+                <span class="mode-desc">信頼度90%以上を自動保存</span>
+                <div class="autosave-indicator saved">
+                    <span class="autosave-dot"></span>
+                    <span>自動保存済</span>
+                </div>
+            </div>
+
+            <!-- ファイルキュー -->
+            <div class="file-queue">
+                <span class="queue-item done">✓ 山田太郎</span>
+                <span class="queue-item active">佐藤花子</span>
+                <span class="queue-item">田中一郎</span>
+                <span class="queue-item">鈴木次郎</span>
+                <span class="queue-more">+2件</span>
+            </div>
+            <!-- バッチ進捗バー -->
+            <div class="batch-progress">
+                <div class="fill" style="width: 33%;"></div>
+            </div>
+
+            <!-- 二重登録警告（該当時のみ表示） -->
+            <div class="duplicate-warning" id="duplicateWarning">
+                <span class="duplicate-warning-icon">⚠️</span>
+                <div class="duplicate-warning-text">
+                    <strong>重複の可能性</strong>：同じ住所で「佐藤 太郎」が登録済み（2024/01/10）
+                </div>
+                <div class="duplicate-warning-actions">
+                    <button class="btn-view-duplicate" onclick="alert('既存レコードを表示')">確認</button>
+                    <button class="btn-ignore-warning" onclick="this.closest('.duplicate-warning').style.display='none'">無視</button>
+                </div>
+            </div>
+
+            <!-- 品質チェックパネル -->
+            <div class="quality-panel">
+                <div class="quality-header">
+                    <span class="quality-title">📋 品質チェック</span>
+                    <button class="quality-toggle" onclick="toggleQuality()">詳細 ▼</button>
+                </div>
+                <div class="quality-items" id="qualityItems">
+                    <div class="quality-item">
+                        <span class="quality-item-label">
+                            <span class="quality-item-status ok"></span>
+                            契約者名
+                        </span>
+                        <span class="quality-item-value">98%</span>
+                    </div>
+                    <div class="quality-item">
+                        <span class="quality-item-label">
+                            <span class="quality-item-status ok"></span>
+                            住所
+                        </span>
+                        <span class="quality-item-value">95%</span>
+                    </div>
+                    <div class="quality-item">
+                        <span class="quality-item-label">
+                            <span class="quality-item-status warning"></span>
+                            ふりがな
+                        </span>
+                        <span class="quality-item-value">72%</span>
+                    </div>
+                    <div class="quality-item">
+                        <span class="quality-item-label">
+                            <span class="quality-item-status ok"></span>
+                            郵便番号形式
+                        </span>
+                        <span class="quality-item-value">OK</span>
+                    </div>
+                    <div class="quality-item">
+                        <span class="quality-item-label">
+                            <span class="quality-item-status ok"></span>
+                            電話番号形式
+                        </span>
+                        <span class="quality-item-value">OK</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- クイックアクション -->
+            <div class="quick-actions">
+                <button class="quick-action" onclick="alert('全フィールドをリセット')">🔄 リセット</button>
+                <button class="quick-action" onclick="alert('前のレコードをコピー')">📋 前回コピー</button>
+                <div class="undo-redo">
+                    <button onclick="alert('Undo')" title="元に戻す (Ctrl+Z)">↩️</button>
+                    <button onclick="alert('Redo')" title="やり直し (Ctrl+Y)">↪️</button>
+                </div>
+            </div>
+
+            <!-- フォーム -->
+            <div class="form-area">
+                <!-- 契約者 -->
+                <div class="form-section">
+                    <div class="form-section-title">契約者情報</div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>契約者名</label>
+                            <input type="text" value="佐藤 花子" class="required" />
+                        </div>
+                        <div class="form-field confidence-indicator">
+                            <label>ふりがな</label>
+                            <input type="text" value="さとう はなこ" class="low-confidence" title="信頼度: 72% - 要確認" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>利用者名</label>
+                            <input type="text" value="" placeholder="契約者と同じ場合は空欄" />
+                        </div>
+                        <div class="form-field">
+                            <label>ふりがな</label>
+                            <input type="text" value="" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 連絡先 -->
+                <div class="form-section">
+                    <div class="form-section-title">連絡先</div>
+                    <div class="form-row">
+                        <div class="form-field w30">
+                            <label>郵便番号</label>
+                            <input type="text" value="150-0001" />
+                        </div>
+                        <div class="form-field">
+                            <label>住所</label>
+                            <input type="text" value="東京都渋谷区神宮前1-2-3 サンプルマンション101" class="required" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>電話番号</label>
+                            <input type="text" value="03-1234-5678" />
+                        </div>
+                        <div class="form-field">
+                            <label>メール</label>
+                            <input type="email" value="sato.hanako@example.com" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 事件情報 -->
+                <div class="form-section">
+                    <div class="form-section-title">事件情報</div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label>弁護士</label>
+                            <div class="code-field">
+                                <span class="code-badge">AB</span>
+                                <span class="code-name">アディーレ法律事務所</span>
+                            </div>
+                        </div>
+                        <div class="form-field">
+                            <label>プロバイダ</label>
+                            <div class="code-field">
+                                <span class="code-badge">NF</span>
+                                <span class="code-name">ニフティ</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- お気に入りコード -->
+                    <div class="form-row" style="margin-top: 4px;">
+                        <div class="form-field">
+                            <label style="font-size:10px;color:#999;">よく使う:</label>
+                            <div class="favorite-codes">
+                                <button class="favorite-code">AB</button>
+                                <button class="favorite-code">TY</button>
+                                <button class="favorite-code">BL</button>
+                            </div>
+                        </div>
+                        <div class="form-field">
+                            <label style="font-size:10px;color:#999;">よく使う:</label>
+                            <div class="favorite-codes">
+                                <button class="favorite-code">NF</button>
+                                <button class="favorite-code">AU</button>
+                                <button class="favorite-code">SO</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- メモ -->
+                <div class="form-section">
+                    <div class="form-section-title">メモ</div>
+                    <div class="memo-field">
+                        <textarea placeholder="特記事項があれば入力"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 監査情報 -->
+            <div class="audit-info">
+                <span>最終更新: 2024/01/15 14:32 (田中)</span>
+                <span>処理ID: #2024-0115-0042</span>
+            </div>
+
+            <!-- アクションバー -->
+            <div class="action-bar">
+                <div class="confidence">
+                    <span>信頼度</span>
+                    <div class="confidence-bar"><div class="fill" style="width: 92%;"></div></div>
+                    <span>92%</span>
+                </div>
+                <div class="progress-info">2 / 6 件</div>
+                <button class="btn btn-skip">スキップ →</button>
+                <button class="btn btn-success">✓ 保存して次へ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ショートカット -->
+    <div class="shortcuts">
+        <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 保存</span>
+        <span><kbd>Ctrl</kbd>+<kbd>→</kbd> スキップ</span>
+        <span><kbd>Ctrl</kbd>+<kbd>O</kbd> 原本を開く</span>
+    </div>
+
+    <!-- 初回ガイド（初回のみ表示） -->
+    <div class="onboarding" id="onboarding">
+        <h4>👋 ようこそ！</h4>
+        <p>PDFをドロップゾーンに入れるだけで、自動的に情報を抽出します。黄色いハイライト部分が抽出元です。</p>
+        <button class="onboarding-close" onclick="closeOnboarding()">OK、わかりました</button>
+    </div>
+
+    <!-- ヘルプモーダル -->
+    <div class="help-modal" id="helpModal">
+        <div class="help-content">
+            <button class="help-close" onclick="closeHelp()">×</button>
+            <h2>📖 使い方ガイド</h2>
+
+            <div class="step">
+                <span class="step-num">1</span>
+                <strong>PDFをドロップ</strong>
+                <p style="margin-top:4px;font-size:12px;color:#666;">
+                    右上のドロップゾーンにPDFファイルをドラッグ＆ドロップするか、クリックして選択します。
+                    複数ファイルを一度に追加できます。
+                </p>
+            </div>
+
+            <div class="step">
+                <span class="step-num">2</span>
+                <strong>自動抽出を確認</strong>
+                <p style="margin-top:4px;font-size:12px;color:#666;">
+                    左側にOCRテキストが表示されます。<span style="background:rgba(255,213,79,0.3);padding:2px 4px;border-radius:2px;">黄色いハイライト</span>が抽出された部分です。
+                    右側のフォームに自動入力されます。
+                </p>
+            </div>
+
+            <div class="step">
+                <span class="step-num">3</span>
+                <strong>内容を確認・修正</strong>
+                <p style="margin-top:4px;font-size:12px;color:#666;">
+                    自動抽出の結果を確認し、必要に応じて修正します。
+                    青い縦線のある項目は必須です。
+                </p>
+            </div>
+
+            <div class="step">
+                <span class="step-num">4</span>
+                <strong>保存して次へ</strong>
+                <p style="margin-top:4px;font-size:12px;color:#666;">
+                    「保存して次へ」ボタンで確定し、次のPDFに進みます。
+                    不要なPDFは「スキップ」できます。
+                </p>
+            </div>
+
+            <h3>⌨️ キーボードショートカット</h3>
+            <table class="shortcut-table">
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>保存して次へ</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>→</kbd></td><td>スキップ</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>原本PDFを開く</td></tr>
+                <tr><td><kbd>Tab</kbd></td><td>次の入力欄へ</td></tr>
+            </table>
+
+            <h3>💡 ヒント</h3>
+            <ul>
+                <li>信頼度が低い場合は、OCRテキストをよく確認してください</li>
+                <li>ファイルキューで処理状況を確認できます</li>
+                <li>弁護士・プロバイダコードは自動判定されます</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- フィードバックモーダル -->
+    <div class="feedback-modal" id="feedbackModal">
+        <div class="feedback-content">
+            <button class="feedback-close" onclick="closeFeedback()">×</button>
+            <h2>💬 改善提案・フィードバック</h2>
+
+            <div id="feedbackForm">
+                <form class="feedback-form" onsubmit="submitFeedback(event)">
+                    <label>カテゴリ</label>
+                    <select id="feedbackType" required>
+                        <option value="">選択してください</option>
+                        <option value="ui">UI/操作性</option>
+                        <option value="feature">機能追加</option>
+                        <option value="bug">不具合報告</option>
+                        <option value="performance">処理速度</option>
+                        <option value="other">その他</option>
+                    </select>
+
+                    <label>優先度</label>
+                    <select id="feedbackPriority">
+                        <option value="low">低（あったらいいな）</option>
+                        <option value="medium" selected>中（改善希望）</option>
+                        <option value="high">高（業務に支障）</option>
+                    </select>
+
+                    <label>内容（具体的に記載してください）</label>
+                    <textarea id="feedbackText" placeholder="例：住所入力時に郵便番号から自動補完できると便利です" required></textarea>
+
+                    <button type="submit" class="btn-submit">送信する</button>
+                </form>
+
+                <!-- 過去のフィードバック -->
+                <div class="feedback-history">
+                    <h4>過去の提案（3件）</h4>
+                    <div class="feedback-item">
+                        <div class="feedback-item-header">
+                            <span class="feedback-item-type">機能追加</span>
+                            <span class="feedback-item-status done">対応済</span>
+                        </div>
+                        <div>一括処理モードの追加</div>
+                        <div class="feedback-item-date">2024/01/10</div>
+                    </div>
+                    <div class="feedback-item">
+                        <div class="feedback-item-header">
+                            <span class="feedback-item-type">UI/操作性</span>
+                            <span class="feedback-item-status pending">検討中</span>
+                        </div>
+                        <div>ダークモード対応</div>
+                        <div class="feedback-item-date">2024/01/12</div>
+                    </div>
+                    <div class="feedback-item">
+                        <div class="feedback-item-header">
+                            <span class="feedback-item-type">機能追加</span>
+                            <span class="feedback-item-status pending">検討中</span>
+                        </div>
+                        <div>Excel出力機能</div>
+                        <div class="feedback-item-date">2024/01/14</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="feedback-success" id="feedbackSuccess">
+                <div class="feedback-success-icon">✅</div>
+                <h3>送信完了</h3>
+                <p>ご提案ありがとうございます。<br>改善に役立てさせていただきます。</p>
+                <button onclick="resetFeedback()" style="margin-top:12px;padding:8px 16px;border:none;background:#1a73e8;color:white;border-radius:4px;cursor:pointer;">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showHelp() {
+            document.getElementById('helpModal').classList.add('show');
+        }
+        function closeHelp() {
+            document.getElementById('helpModal').classList.remove('show');
+        }
+        function closeOnboarding() {
+            document.getElementById('onboarding').style.display = 'none';
+            localStorage.setItem('onboardingClosed', 'true');
+        }
+        // 初回以降は非表示
+        if (localStorage.getItem('onboardingClosed')) {
+            document.getElementById('onboarding').style.display = 'none';
+        }
+        // ESCでモーダルを閉じる
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeHelp();
+                closeFeedback();
+            }
+        });
+
+        // フィードバック機能
+        function showFeedback() {
+            document.getElementById('feedbackModal').classList.add('show');
+        }
+        function closeFeedback() {
+            document.getElementById('feedbackModal').classList.remove('show');
+        }
+        function submitFeedback(e) {
+            e.preventDefault();
+            const type = document.getElementById('feedbackType').value;
+            const priority = document.getElementById('feedbackPriority').value;
+            const text = document.getElementById('feedbackText').value;
+
+            // 実際の実装ではAPIに送信
+            console.log('フィードバック送信:', { type, priority, text });
+
+            document.getElementById('feedbackForm').style.display = 'none';
+            document.getElementById('feedbackSuccess').classList.add('show');
+        }
+        function resetFeedback() {
+            document.getElementById('feedbackForm').style.display = 'block';
+            document.getElementById('feedbackSuccess').classList.remove('show');
+            document.getElementById('feedbackType').value = '';
+            document.getElementById('feedbackText').value = '';
+            closeFeedback();
+        }
+
+        // 品質チェックパネルの開閉
+        function toggleQuality() {
+            const items = document.getElementById('qualityItems');
+            const btn = document.querySelector('.quality-toggle');
+            if (items.classList.contains('show')) {
+                items.classList.remove('show');
+                btn.textContent = '詳細 ▼';
+            } else {
+                items.classList.add('show');
+                btn.textContent = '閉じる ▲';
+            }
+        }
+
+        // バリデーション（サンプル）
+        function validatePostalCode(input) {
+            const pattern = /^\d{3}-?\d{4}$/;
+            if (!pattern.test(input.value)) {
+                input.classList.add('invalid');
+            } else {
+                input.classList.remove('invalid');
+            }
+        }
+
+        function validatePhone(input) {
+            const pattern = /^[\d\-]+$/;
+            if (input.value && !pattern.test(input.value)) {
+                input.classList.add('invalid');
+            } else {
+                input.classList.remove('invalid');
+            }
+        }
+    </script>
+</body>
+</html>

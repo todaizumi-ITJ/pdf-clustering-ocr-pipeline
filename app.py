@@ -15,7 +15,7 @@ from config import Config
 from converter import PDFConverter
 from ocr_service import GoogleVisionOCR
 from field_extractor import FieldExtractor, ExtractedFields
-from database import Database
+from database import Database, Feedback
 from exporter import CSVExporter
 from code_master import CodeMaster
 
@@ -294,13 +294,168 @@ def render_master_tab():
                 st.rerun()
 
 
+def render_feedback_tab():
+    """フィードバックタブを描画"""
+    st.header("💬 改善提案・フィードバック")
+
+    # 送信フォームと一覧を2カラムで表示
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("新しい提案を送信")
+
+        with st.form("feedback_form"):
+            category = st.selectbox(
+                "カテゴリ",
+                options=["ui", "feature", "bug", "performance", "other"],
+                format_func=lambda x: {
+                    "ui": "UI/操作性",
+                    "feature": "機能追加",
+                    "bug": "不具合報告",
+                    "performance": "処理速度",
+                    "other": "その他",
+                }[x],
+            )
+
+            priority = st.selectbox(
+                "優先度",
+                options=["low", "medium", "high"],
+                index=1,
+                format_func=lambda x: {
+                    "low": "低（あったらいいな）",
+                    "medium": "中（改善希望）",
+                    "high": "高（業務に支障）",
+                }[x],
+            )
+
+            content = st.text_area(
+                "内容（具体的に記載してください）",
+                placeholder="例：住所入力時に郵便番号から自動補完できると便利です",
+                height=150,
+            )
+
+            user_name = st.text_input("お名前（任意）")
+
+            submitted = st.form_submit_button("送信する", type="primary")
+
+            if submitted:
+                if content.strip():
+                    st.session_state.db.insert_feedback(
+                        category=category,
+                        content=content,
+                        priority=priority,
+                        user_name=user_name,
+                    )
+                    st.success("フィードバックを送信しました。ありがとうございます！")
+                    st.rerun()
+                else:
+                    st.error("内容を入力してください")
+
+    with col2:
+        st.subheader("過去の提案")
+
+        # 統計表示
+        stats = st.session_state.db.get_feedback_stats()
+        if stats["total"] > 0:
+            cols = st.columns(4)
+            with cols[0]:
+                st.metric("総数", stats["total"])
+            with cols[1]:
+                pending = stats["by_status"].get("pending", 0)
+                st.metric("未対応", pending)
+            with cols[2]:
+                in_progress = stats["by_status"].get("in_progress", 0)
+                st.metric("対応中", in_progress)
+            with cols[3]:
+                done = stats["by_status"].get("done", 0)
+                st.metric("完了", done)
+
+        # フィルタ
+        filter_status = st.selectbox(
+            "ステータスで絞り込み",
+            options=["all", "pending", "in_progress", "done", "rejected"],
+            format_func=lambda x: {
+                "all": "すべて",
+                "pending": "未対応",
+                "in_progress": "対応中",
+                "done": "完了",
+                "rejected": "却下",
+            }[x],
+        )
+
+        # フィードバック一覧
+        if filter_status == "all":
+            feedbacks = st.session_state.db.get_all_feedbacks(limit=50)
+        else:
+            feedbacks = st.session_state.db.get_feedbacks_by_status(filter_status)
+
+        if feedbacks:
+            for fb in feedbacks:
+                status_colors = {
+                    "pending": "🟡",
+                    "in_progress": "🔵",
+                    "done": "🟢",
+                    "rejected": "🔴",
+                }
+                category_labels = {
+                    "ui": "UI/操作性",
+                    "feature": "機能追加",
+                    "bug": "不具合",
+                    "performance": "速度",
+                    "other": "その他",
+                }
+                priority_labels = {
+                    "low": "低",
+                    "medium": "中",
+                    "high": "高",
+                }
+
+                with st.expander(
+                    f"{status_colors.get(fb.status, '⚪')} [{category_labels.get(fb.category, fb.category)}] {fb.content[:40]}..."
+                    if len(fb.content) > 40
+                    else f"{status_colors.get(fb.status, '⚪')} [{category_labels.get(fb.category, fb.category)}] {fb.content}"
+                ):
+                    st.write(f"**内容:** {fb.content}")
+                    st.write(f"**優先度:** {priority_labels.get(fb.priority, fb.priority)}")
+                    st.write(f"**投稿者:** {fb.user_name or '匿名'}")
+                    st.write(f"**登録日:** {fb.created_at.strftime('%Y/%m/%d %H:%M') if fb.created_at else '-'}")
+
+                    # ステータス変更（管理用）
+                    new_status = st.selectbox(
+                        "ステータス変更",
+                        options=["pending", "in_progress", "done", "rejected"],
+                        index=["pending", "in_progress", "done", "rejected"].index(fb.status),
+                        format_func=lambda x: {
+                            "pending": "未対応",
+                            "in_progress": "対応中",
+                            "done": "完了",
+                            "rejected": "却下",
+                        }[x],
+                        key=f"status_{fb.id}",
+                    )
+
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if st.button("更新", key=f"update_{fb.id}"):
+                            st.session_state.db.update_feedback_status(fb.id, new_status)
+                            st.success("更新しました")
+                            st.rerun()
+                    with col_b:
+                        if st.button("削除", key=f"delete_{fb.id}"):
+                            st.session_state.db.delete_feedback(fb.id)
+                            st.success("削除しました")
+                            st.rerun()
+        else:
+            st.info("フィードバックはまだありません")
+
+
 def main():
     st.title("📄 PDF フィールド抽出システム")
 
     render_sidebar()
 
     # メインタブ
-    tab1, tab2, tab3 = st.tabs(["アップロード", "履歴", "マスタ管理"])
+    tab1, tab2, tab3, tab4 = st.tabs(["アップロード", "履歴", "マスタ管理", "💬 フィードバック"])
 
     with tab1:
         render_upload_tab()
@@ -310,6 +465,9 @@ def main():
 
     with tab3:
         render_master_tab()
+
+    with tab4:
+        render_feedback_tab()
 
 
 if __name__ == "__main__":
