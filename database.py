@@ -10,6 +10,51 @@ from config import Config
 
 
 @dataclass
+class Customer:
+    """顧客レコード"""
+
+    id: Optional[int]
+    document_id: Optional[int]  # documentsテーブルとの関連
+    contractor_name: str        # 契約者名
+    contractor_kana: str        # ふりがな
+    user_name: str              # 利用者名
+    user_kana: str              # 利用者ふりがな
+    postal_code: str            # 郵便番号
+    address: str                # 住所
+    phone: str                  # 電話番号
+    email: str                  # メール
+    memo: str                   # メモ
+    lawyer_code: str            # 弁護士コード
+    lawyer_name: str            # 弁護士事務所名
+    provider_code: str          # プロバイダコード
+    provider_name: str          # プロバイダ名
+    confidence: float           # 抽出信頼度
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, row: tuple) -> "Customer":
+        return cls(
+            id=row[0],
+            document_id=row[1],
+            contractor_name=row[2],
+            contractor_kana=row[3],
+            user_name=row[4],
+            user_kana=row[5],
+            postal_code=row[6],
+            address=row[7],
+            phone=row[8],
+            email=row[9],
+            memo=row[10],
+            lawyer_code=row[11],
+            lawyer_name=row[12],
+            provider_code=row[13],
+            provider_name=row[14],
+            confidence=row[15],
+            created_at=datetime.fromisoformat(row[16]) if row[16] else None,
+        )
+
+
+@dataclass
 class Document:
     """文書レコード"""
 
@@ -73,6 +118,36 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_documents_filename
                 ON documents(filename);
+
+                CREATE TABLE IF NOT EXISTS customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id INTEGER,
+                    contractor_name TEXT NOT NULL,
+                    contractor_kana TEXT,
+                    user_name TEXT,
+                    user_kana TEXT,
+                    postal_code TEXT,
+                    address TEXT NOT NULL,
+                    phone TEXT,
+                    email TEXT,
+                    memo TEXT,
+                    lawyer_code TEXT DEFAULT 'XX',
+                    lawyer_name TEXT,
+                    provider_code TEXT DEFAULT 'XX',
+                    provider_name TEXT,
+                    confidence REAL DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_customers_lawyer
+                ON customers(lawyer_code);
+
+                CREATE INDEX IF NOT EXISTS idx_customers_provider
+                ON customers(provider_code);
+
+                CREATE INDEX IF NOT EXISTS idx_customers_contractor
+                ON customers(contractor_name);
             """
             )
 
@@ -237,3 +312,158 @@ class Database:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM documents")
             conn.execute("DELETE FROM clusters")
+            conn.execute("DELETE FROM customers")
+
+    # ==================== 顧客情報 ====================
+
+    def insert_customer(
+        self,
+        contractor_name: str,
+        address: str,
+        document_id: int = None,
+        contractor_kana: str = "",
+        user_name: str = "",
+        user_kana: str = "",
+        postal_code: str = "",
+        phone: str = "",
+        email: str = "",
+        memo: str = "",
+        lawyer_code: str = "XX",
+        lawyer_name: str = "",
+        provider_code: str = "XX",
+        provider_name: str = "",
+        confidence: float = 0,
+    ) -> int:
+        """
+        顧客情報を挿入
+
+        Returns:
+            挿入されたレコードのID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO customers
+                (document_id, contractor_name, contractor_kana, user_name, user_kana,
+                 postal_code, address, phone, email, memo,
+                 lawyer_code, lawyer_name, provider_code, provider_name, confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (document_id, contractor_name, contractor_kana, user_name, user_kana,
+                 postal_code, address, phone, email, memo,
+                 lawyer_code, lawyer_name, provider_code, provider_name, confidence),
+            )
+            return cursor.lastrowid
+
+    def insert_customer_from_fields(self, fields, document_id: int = None) -> int:
+        """
+        ExtractedFieldsから顧客情報を挿入
+
+        Args:
+            fields: ExtractedFieldsオブジェクト
+            document_id: 関連するdocumentのID
+
+        Returns:
+            挿入されたレコードのID
+        """
+        return self.insert_customer(
+            document_id=document_id,
+            contractor_name=fields.contractor_name,
+            contractor_kana=fields.contractor_kana,
+            user_name=fields.user_name,
+            user_kana=fields.user_kana,
+            postal_code=fields.postal_code,
+            address=fields.address,
+            phone=fields.phone,
+            email=fields.email,
+            memo=fields.memo,
+            lawyer_code=fields.lawyer_code,
+            lawyer_name=fields.lawyer_name,
+            provider_code=fields.provider_code,
+            provider_name=fields.provider_name,
+            confidence=fields.confidence,
+        )
+
+    def get_customer(self, customer_id: int) -> Optional[Customer]:
+        """IDで顧客を取得"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM customers WHERE id = ?", (customer_id,)
+            ).fetchone()
+            return Customer.from_row(row) if row else None
+
+    def get_all_customers(self) -> List[Customer]:
+        """全顧客を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM customers ORDER BY created_at DESC"
+            ).fetchall()
+            return [Customer.from_row(row) for row in rows]
+
+    def get_customers_by_lawyer(self, lawyer_code: str) -> List[Customer]:
+        """弁護士コードで顧客を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM customers WHERE lawyer_code = ? ORDER BY created_at DESC",
+                (lawyer_code,),
+            ).fetchall()
+            return [Customer.from_row(row) for row in rows]
+
+    def get_customers_by_provider(self, provider_code: str) -> List[Customer]:
+        """プロバイダコードで顧客を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM customers WHERE provider_code = ? ORDER BY created_at DESC",
+                (provider_code,),
+            ).fetchall()
+            return [Customer.from_row(row) for row in rows]
+
+    def search_customers(self, query: str, limit: int = 100) -> List[Customer]:
+        """顧客を検索（名前・住所）"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM customers
+                WHERE contractor_name LIKE ?
+                   OR user_name LIKE ?
+                   OR address LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (f"%{query}%", f"%{query}%", f"%{query}%", limit),
+            ).fetchall()
+            return [Customer.from_row(row) for row in rows]
+
+    def get_customer_stats(self) -> dict:
+        """顧客統計を取得"""
+        with self._get_connection() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+
+            by_lawyer = conn.execute(
+                """
+                SELECT lawyer_code, COUNT(*) as count
+                FROM customers
+                GROUP BY lawyer_code
+                ORDER BY count DESC
+                """
+            ).fetchall()
+
+            by_provider = conn.execute(
+                """
+                SELECT provider_code, COUNT(*) as count
+                FROM customers
+                GROUP BY provider_code
+                ORDER BY count DESC
+                """
+            ).fetchall()
+
+            return {
+                "total": total,
+                "by_lawyer": {row[0]: row[1] for row in by_lawyer},
+                "by_provider": {row[0]: row[1] for row in by_provider},
+            }
+
+    def delete_customer(self, customer_id: int):
+        """顧客を削除"""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))

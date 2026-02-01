@@ -21,6 +21,7 @@ from clustering import DocumentClusterer
 from ocr_service import GoogleVisionOCR
 from database import Database
 from exporter import CSVExporter
+from field_extractor import FieldExtractor
 
 
 def find_pdfs(input_dir: Path) -> List[Path]:
@@ -40,6 +41,7 @@ def run_pipeline(
     n_clusters: int = None,
     export_csv: bool = False,
     skip_ocr: bool = False,
+    extract_fields: bool = False,
 ):
     """
     パイプラインを実行
@@ -50,6 +52,7 @@ def run_pipeline(
         n_clusters: k-meansのクラスタ数（Noneでauto: DBSCAN）
         export_csv: CSV出力するか
         skip_ocr: 本番OCRをスキップするか（クラスタリングのみ）
+        extract_fields: フィールド抽出を行うか（住所・氏名等）
     """
     # 設定
     if output_dir:
@@ -166,6 +169,30 @@ def run_pipeline(
     # クラスタ統計を更新
     db.update_all_cluster_counts()
 
+    # ステップ3.5: フィールド抽出（オプション）
+    if extract_fields and not skip_ocr:
+        print("\n=== ステップ3.5: フィールド抽出 (Claude API) ===")
+        try:
+            field_extractor = FieldExtractor()
+            documents = db.get_all_documents()
+
+            for doc in tqdm(documents, desc="フィールド抽出"):
+                try:
+                    # OCRテキストからフィールドを抽出
+                    fields = field_extractor.extract(doc.ocr_text, Path(doc.filepath))
+
+                    # 顧客情報をDBに保存
+                    db.insert_customer_from_fields(fields, document_id=doc.id)
+
+                except Exception as e:
+                    print(f"\n抽出エラー [{doc.filename}]: {e}")
+
+            print(f"顧客情報を {len(documents)} 件抽出しました")
+
+        except ValueError as e:
+            print(f"フィールド抽出をスキップ: {e}")
+            print("ANTHROPIC_API_KEY を設定してください")
+
     # ステップ4: 出力
     print("\n=== ステップ4: 結果出力 ===")
     print(f"データベース: {Config.DB_PATH}")
@@ -184,6 +211,14 @@ def run_pipeline(
         # クラスタ別CSV
         cluster_csvs = exporter.export_all_clusters_separately(db)
         print(f"クラスタ別CSV: {len(cluster_csvs)}件出力")
+
+        # 顧客情報CSV（フィールド抽出が有効な場合）
+        if extract_fields:
+            customers_csv = exporter.export_customers(db)
+            print(f"顧客情報CSV: {customers_csv}")
+
+            stats_csv = exporter.export_customer_stats(db)
+            print(f"顧客統計CSV: {stats_csv}")
 
     # 一時ファイル削除
     converter.cleanup()
@@ -227,6 +262,11 @@ def main():
         action="store_true",
         help="本番OCRをスキップ（クラスタリングのみ）",
     )
+    parser.add_argument(
+        "--extract-fields",
+        action="store_true",
+        help="フィールド抽出を有効化（住所・氏名等をClaude APIで抽出）",
+    )
 
     args = parser.parse_args()
 
@@ -236,6 +276,7 @@ def main():
         n_clusters=args.clusters,
         export_csv=args.export_csv,
         skip_ocr=args.skip_ocr,
+        extract_fields=args.extract_fields,
     )
 
 

@@ -1,0 +1,62 @@
+{
+  "lawyers": {
+    "TY": {
+      "name": "東京法律事務所",
+      "aliases": ["東京法律", "東京法律事務所", "弁護士法人東京法律"]
+    },
+    "AB": {
+      "name": "アディーレ法律事務所",
+      "aliases": ["アディーレ", "Adire", "弁護士法人アディーレ"]
+    },
+    "BL": {
+      "name": "ベリーベスト法律事務所",
+      "aliases": ["ベリーベスト", "Berry Best", "弁護士法人ベリーベスト"]
+    },
+    "HS": {
+      "name": "法律事務所ホームワン",
+      "aliases": ["ホームワン", "HomeOne", "弁護士法人ホームワン"]
+    },
+    "SM": {
+      "name": "杉山事務所",
+      "aliases": ["杉山", "杉山法律事務所", "司法書士法人杉山事務所"]
+    },
+    "XX": {
+      "name": "不明",
+      "aliases": []
+    }
+  },
+  "providers": {
+    "NF": {
+      "name": "ニフティ",
+      "aliases": ["@nifty", "nifty", "ニフティ株式会社"]
+    },
+    "AU": {
+      "name": "au one net",
+      "aliases": ["au", "KDDI", "au one"]
+    },
+    "OC": {
+      "name": "OCN",
+      "aliases": ["OCN", "NTTコミュニケーションズ", "NTT Com"]
+    },
+    "SO": {
+      "name": "So-net",
+      "aliases": ["ソネット", "Sony Network", "So-net"]
+    },
+    "BB": {
+      "name": "BIGLOBE",
+      "aliases": ["ビッグローブ", "BIGLOBE", "ビッグローブ株式会社"]
+    },
+    "SF": {
+      "name": "ソフトバンク",
+      "aliases": ["SoftBank", "Yahoo! BB", "ソフトバンク株式会社"]
+    },
+    "DO": {
+      "name": "ドコモ",
+      "aliases": ["docomo", "NTTドコモ", "ドコモ光"]
+    },
+    "XX": {
+      "name": "不明",
+      "aliases": []
+    }
+  }
+}
