@@ -108,6 +108,148 @@ class Feedback:
         )
 
 
+@dataclass
+class Disclosure:
+    """プロバイダ開示文書レコード"""
+
+    id: Optional[int]
+    document_id: Optional[int]      # documentsテーブルとの関連
+    document_number: str            # 管理番号 (SL3502等)
+    provider_name: str              # プロバイダ名
+    disclosure_date: str            # 開示日
+    court_case_number: str          # 裁判所事件番号
+    requester_name: str             # 請求者（著作権者）
+    requester_lawyer: str           # 請求者代理人
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, row: tuple) -> "Disclosure":
+        return cls(
+            id=row[0],
+            document_id=row[1],
+            document_number=row[2],
+            provider_name=row[3],
+            disclosure_date=row[4],
+            court_case_number=row[5],
+            requester_name=row[6],
+            requester_lawyer=row[7],
+            created_at=datetime.fromisoformat(row[8]) if row[8] else None,
+        )
+
+
+@dataclass
+class DisclosedSubscriber:
+    """開示された契約者情報レコード"""
+
+    id: Optional[int]
+    disclosure_id: int              # disclosuresとの関連
+    sequence_number: int            # 番号（リスト内の順番）
+    catalog_number: int             # 目録番号
+    subscriber_name: str            # 契約者氏名
+    subscriber_address: str         # 契約者住所
+    subscriber_postal_code: str     # 郵便番号
+    subscriber_phone: str           # 電話番号
+    subscriber_email: str           # メールアドレス
+    ip_address: str                 # IPアドレス
+    port_number: int                # ポート番号
+    communication_datetime: str     # 通信日時
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, row: tuple) -> "DisclosedSubscriber":
+        return cls(
+            id=row[0],
+            disclosure_id=row[1],
+            sequence_number=row[2],
+            catalog_number=row[3],
+            subscriber_name=row[4],
+            subscriber_address=row[5],
+            subscriber_postal_code=row[6],
+            subscriber_phone=row[7],
+            subscriber_email=row[8],
+            ip_address=row[9],
+            port_number=row[10],
+            communication_datetime=row[11],
+            created_at=datetime.fromisoformat(row[12]) if row[12] else None,
+        )
+
+
+@dataclass
+class AcceptanceNotice:
+    """受任通知レコード"""
+
+    id: Optional[int]
+    document_id: Optional[int]      # documentsテーブルとの関連
+    notice_date: str                # 通知日
+    court_case_number: str          # 裁判所事件番号
+
+    # 契約者情報（プロバイダ開示の名義人）
+    subscriber_name: str            # 契約名義人
+    subscriber_address: str
+    subscriber_postal_code: str
+
+    # 利用者情報（実際の依頼者）
+    user_name: str                  # 当職依頼者/利用者
+    user_address: str
+    user_postal_code: str
+    user_phone: str
+    user_email: str
+    is_same_as_subscriber: bool     # 契約者と利用者が同一人物か
+
+    # 相手方情報
+    plaintiff_name: str             # 貴職依頼者（著作権者）
+    plaintiff_lawyer_firm: str      # 相手方弁護士事務所
+    plaintiff_lawyer_name: str      # 相手方弁護士名
+
+    # 依頼者側弁護士情報
+    lawyer_firm: str                # 弁護士事務所名
+    lawyer_name: str                # 担当弁護士名
+    lawyer_address: str
+    lawyer_phone: str
+    lawyer_fax: str
+    lawyer_email: str
+
+    # 侵害情報
+    infringement_ip: str
+    infringement_datetime: str
+    work_title: str                 # 著作物名
+    work_hash: str                  # ハッシュ値
+
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, row: tuple) -> "AcceptanceNotice":
+        return cls(
+            id=row[0],
+            document_id=row[1],
+            notice_date=row[2],
+            court_case_number=row[3],
+            subscriber_name=row[4],
+            subscriber_address=row[5],
+            subscriber_postal_code=row[6],
+            user_name=row[7],
+            user_address=row[8],
+            user_postal_code=row[9],
+            user_phone=row[10],
+            user_email=row[11],
+            is_same_as_subscriber=bool(row[12]),
+            plaintiff_name=row[13],
+            plaintiff_lawyer_firm=row[14],
+            plaintiff_lawyer_name=row[15],
+            lawyer_firm=row[16],
+            lawyer_name=row[17],
+            lawyer_address=row[18],
+            lawyer_phone=row[19],
+            lawyer_fax=row[20],
+            lawyer_email=row[21],
+            infringement_ip=row[22],
+            infringement_datetime=row[23],
+            work_title=row[24],
+            work_hash=row[25],
+            created_at=datetime.fromisoformat(row[26]) if row[26] else None,
+        )
+
+
 class Database:
     """SQLiteデータベース操作クラス"""
 
@@ -195,6 +337,109 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_feedbacks_priority
                 ON feedbacks(priority);
+
+                -- ==================== プロバイダ開示 ====================
+
+                CREATE TABLE IF NOT EXISTS disclosures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id INTEGER,
+                    document_number TEXT,
+                    provider_name TEXT,
+                    disclosure_date TEXT,
+                    court_case_number TEXT,
+                    requester_name TEXT,
+                    requester_lawyer TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_disclosures_provider
+                ON disclosures(provider_name);
+
+                CREATE INDEX IF NOT EXISTS idx_disclosures_court_case
+                ON disclosures(court_case_number);
+
+                CREATE TABLE IF NOT EXISTS disclosed_subscribers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    disclosure_id INTEGER NOT NULL,
+                    sequence_number INTEGER,
+                    catalog_number INTEGER,
+                    subscriber_name TEXT,
+                    subscriber_address TEXT,
+                    subscriber_postal_code TEXT,
+                    subscriber_phone TEXT,
+                    subscriber_email TEXT,
+                    ip_address TEXT,
+                    port_number INTEGER,
+                    communication_datetime TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (disclosure_id) REFERENCES disclosures(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_disclosed_subscribers_disclosure
+                ON disclosed_subscribers(disclosure_id);
+
+                CREATE INDEX IF NOT EXISTS idx_disclosed_subscribers_name
+                ON disclosed_subscribers(subscriber_name);
+
+                CREATE INDEX IF NOT EXISTS idx_disclosed_subscribers_ip
+                ON disclosed_subscribers(ip_address);
+
+                -- ==================== 受任通知 ====================
+
+                CREATE TABLE IF NOT EXISTS acceptance_notices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id INTEGER,
+                    notice_date TEXT,
+                    court_case_number TEXT,
+
+                    -- 契約者情報
+                    subscriber_name TEXT,
+                    subscriber_address TEXT,
+                    subscriber_postal_code TEXT,
+
+                    -- 利用者情報
+                    user_name TEXT,
+                    user_address TEXT,
+                    user_postal_code TEXT,
+                    user_phone TEXT,
+                    user_email TEXT,
+                    is_same_as_subscriber INTEGER DEFAULT 1,
+
+                    -- 相手方情報
+                    plaintiff_name TEXT,
+                    plaintiff_lawyer_firm TEXT,
+                    plaintiff_lawyer_name TEXT,
+
+                    -- 依頼者側弁護士情報
+                    lawyer_firm TEXT,
+                    lawyer_name TEXT,
+                    lawyer_address TEXT,
+                    lawyer_phone TEXT,
+                    lawyer_fax TEXT,
+                    lawyer_email TEXT,
+
+                    -- 侵害情報
+                    infringement_ip TEXT,
+                    infringement_datetime TEXT,
+                    work_title TEXT,
+                    work_hash TEXT,
+
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_acceptance_notices_court_case
+                ON acceptance_notices(court_case_number);
+
+                CREATE INDEX IF NOT EXISTS idx_acceptance_notices_subscriber
+                ON acceptance_notices(subscriber_name);
+
+                CREATE INDEX IF NOT EXISTS idx_acceptance_notices_user
+                ON acceptance_notices(user_name);
+
+                CREATE INDEX IF NOT EXISTS idx_acceptance_notices_plaintiff
+                ON acceptance_notices(plaintiff_name);
             """
             )
 
@@ -361,6 +606,9 @@ class Database:
             conn.execute("DELETE FROM clusters")
             conn.execute("DELETE FROM customers")
             conn.execute("DELETE FROM feedbacks")
+            conn.execute("DELETE FROM disclosures")
+            conn.execute("DELETE FROM disclosed_subscribers")
+            conn.execute("DELETE FROM acceptance_notices")
 
     # ==================== 顧客情報 ====================
 
@@ -639,3 +887,252 @@ class Database:
         """フィードバックを削除"""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM feedbacks WHERE id = ?", (feedback_id,))
+
+    # ==================== プロバイダ開示 ====================
+
+    def insert_disclosure(
+        self,
+        document_number: str = "",
+        provider_name: str = "",
+        disclosure_date: str = "",
+        court_case_number: str = "",
+        requester_name: str = "",
+        requester_lawyer: str = "",
+        document_id: int = None,
+    ) -> int:
+        """
+        プロバイダ開示文書を挿入
+
+        Returns:
+            挿入されたレコードのID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO disclosures
+                (document_id, document_number, provider_name, disclosure_date,
+                 court_case_number, requester_name, requester_lawyer)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (document_id, document_number, provider_name, disclosure_date,
+                 court_case_number, requester_name, requester_lawyer),
+            )
+            return cursor.lastrowid
+
+    def insert_disclosed_subscriber(
+        self,
+        disclosure_id: int,
+        subscriber_name: str = "",
+        subscriber_address: str = "",
+        subscriber_postal_code: str = "",
+        subscriber_phone: str = "",
+        subscriber_email: str = "",
+        ip_address: str = "",
+        port_number: int = 0,
+        communication_datetime: str = "",
+        sequence_number: int = 0,
+        catalog_number: int = 0,
+    ) -> int:
+        """
+        開示された契約者情報を挿入
+
+        Returns:
+            挿入されたレコードのID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO disclosed_subscribers
+                (disclosure_id, sequence_number, catalog_number,
+                 subscriber_name, subscriber_address, subscriber_postal_code,
+                 subscriber_phone, subscriber_email,
+                 ip_address, port_number, communication_datetime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (disclosure_id, sequence_number, catalog_number,
+                 subscriber_name, subscriber_address, subscriber_postal_code,
+                 subscriber_phone, subscriber_email,
+                 ip_address, port_number, communication_datetime),
+            )
+            return cursor.lastrowid
+
+    def get_disclosure(self, disclosure_id: int) -> Optional[Disclosure]:
+        """IDでプロバイダ開示を取得"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM disclosures WHERE id = ?", (disclosure_id,)
+            ).fetchone()
+            return Disclosure.from_row(row) if row else None
+
+    def get_all_disclosures(self) -> List[Disclosure]:
+        """全プロバイダ開示を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM disclosures ORDER BY created_at DESC"
+            ).fetchall()
+            return [Disclosure.from_row(row) for row in rows]
+
+    def get_disclosed_subscribers(self, disclosure_id: int) -> List[DisclosedSubscriber]:
+        """開示IDで契約者リストを取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM disclosed_subscribers WHERE disclosure_id = ? ORDER BY sequence_number",
+                (disclosure_id,),
+            ).fetchall()
+            return [DisclosedSubscriber.from_row(row) for row in rows]
+
+    def search_disclosed_subscribers(self, query: str, limit: int = 100) -> List[DisclosedSubscriber]:
+        """契約者を検索（名前・住所・IP）"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM disclosed_subscribers
+                WHERE subscriber_name LIKE ?
+                   OR subscriber_address LIKE ?
+                   OR ip_address LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (f"%{query}%", f"%{query}%", f"%{query}%", limit),
+            ).fetchall()
+            return [DisclosedSubscriber.from_row(row) for row in rows]
+
+    # ==================== 受任通知 ====================
+
+    def insert_acceptance_notice(
+        self,
+        notice_date: str = "",
+        court_case_number: str = "",
+        subscriber_name: str = "",
+        subscriber_address: str = "",
+        subscriber_postal_code: str = "",
+        user_name: str = "",
+        user_address: str = "",
+        user_postal_code: str = "",
+        user_phone: str = "",
+        user_email: str = "",
+        is_same_as_subscriber: bool = True,
+        plaintiff_name: str = "",
+        plaintiff_lawyer_firm: str = "",
+        plaintiff_lawyer_name: str = "",
+        lawyer_firm: str = "",
+        lawyer_name: str = "",
+        lawyer_address: str = "",
+        lawyer_phone: str = "",
+        lawyer_fax: str = "",
+        lawyer_email: str = "",
+        infringement_ip: str = "",
+        infringement_datetime: str = "",
+        work_title: str = "",
+        work_hash: str = "",
+        document_id: int = None,
+    ) -> int:
+        """
+        受任通知を挿入
+
+        Returns:
+            挿入されたレコードのID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO acceptance_notices
+                (document_id, notice_date, court_case_number,
+                 subscriber_name, subscriber_address, subscriber_postal_code,
+                 user_name, user_address, user_postal_code, user_phone, user_email,
+                 is_same_as_subscriber,
+                 plaintiff_name, plaintiff_lawyer_firm, plaintiff_lawyer_name,
+                 lawyer_firm, lawyer_name, lawyer_address, lawyer_phone, lawyer_fax, lawyer_email,
+                 infringement_ip, infringement_datetime, work_title, work_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (document_id, notice_date, court_case_number,
+                 subscriber_name, subscriber_address, subscriber_postal_code,
+                 user_name, user_address, user_postal_code, user_phone, user_email,
+                 1 if is_same_as_subscriber else 0,
+                 plaintiff_name, plaintiff_lawyer_firm, plaintiff_lawyer_name,
+                 lawyer_firm, lawyer_name, lawyer_address, lawyer_phone, lawyer_fax, lawyer_email,
+                 infringement_ip, infringement_datetime, work_title, work_hash),
+            )
+            return cursor.lastrowid
+
+    def get_acceptance_notice(self, notice_id: int) -> Optional[AcceptanceNotice]:
+        """IDで受任通知を取得"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM acceptance_notices WHERE id = ?", (notice_id,)
+            ).fetchone()
+            return AcceptanceNotice.from_row(row) if row else None
+
+    def get_all_acceptance_notices(self) -> List[AcceptanceNotice]:
+        """全受任通知を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM acceptance_notices ORDER BY created_at DESC"
+            ).fetchall()
+            return [AcceptanceNotice.from_row(row) for row in rows]
+
+    def get_acceptance_notices_by_plaintiff(self, plaintiff_name: str) -> List[AcceptanceNotice]:
+        """著作権者名で受任通知を取得"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM acceptance_notices WHERE plaintiff_name LIKE ? ORDER BY created_at DESC",
+                (f"%{plaintiff_name}%",),
+            ).fetchall()
+            return [AcceptanceNotice.from_row(row) for row in rows]
+
+    def search_acceptance_notices(self, query: str, limit: int = 100) -> List[AcceptanceNotice]:
+        """受任通知を検索（名前・事件番号）"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM acceptance_notices
+                WHERE subscriber_name LIKE ?
+                   OR user_name LIKE ?
+                   OR court_case_number LIKE ?
+                   OR plaintiff_name LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", limit),
+            ).fetchall()
+            return [AcceptanceNotice.from_row(row) for row in rows]
+
+    def get_acceptance_notice_stats(self) -> dict:
+        """受任通知の統計を取得"""
+        with self._get_connection() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM acceptance_notices").fetchone()[0]
+
+            # 契約者と利用者が異なるケース
+            different_user = conn.execute(
+                "SELECT COUNT(*) FROM acceptance_notices WHERE is_same_as_subscriber = 0"
+            ).fetchone()[0]
+
+            by_plaintiff = conn.execute(
+                """
+                SELECT plaintiff_name, COUNT(*) as count
+                FROM acceptance_notices
+                WHERE plaintiff_name IS NOT NULL AND plaintiff_name != ''
+                GROUP BY plaintiff_name
+                ORDER BY count DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
+            by_lawyer_firm = conn.execute(
+                """
+                SELECT lawyer_firm, COUNT(*) as count
+                FROM acceptance_notices
+                WHERE lawyer_firm IS NOT NULL AND lawyer_firm != ''
+                GROUP BY lawyer_firm
+                ORDER BY count DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
+            return {
+                "total": total,
+                "different_user_count": different_user,
+                "by_plaintiff": {row[0]: row[1] for row in by_plaintiff},
+                "by_lawyer_firm": {row[0]: row[1] for row in by_lawyer_firm},
+            }
